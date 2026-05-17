@@ -16,7 +16,7 @@ public final class EVStreamTransformations {
 
     /**
      * Parse and validate location topic data in one pass
-     * Returns only valid records: county IS NOT NULL AND vehicle_location IS NOT NULL
+     * Returns only valid records
      */
     public static Dataset<Row> getValidLocationData(SparkSession spark, AppConfig config) {
         StructType schema = EVSchemaFactory.locationSchema();

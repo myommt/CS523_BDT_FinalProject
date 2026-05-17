@@ -6,7 +6,7 @@ This project consumes EV JSON messages from two separate Kafka topics, performs 
 
 - Subscribes to two Kafka topics: `electric-vehicle-location`, `electric-vehicle-evdata`
 - Filters data quality in-stream before writing to Hive:
-  - **Location**: Only writes records with non-null county and vehicle_location
+  - **Location**: Only writes records with valid dol_vehicle_id
   - **Evdata**: Only writes records with valid electric_range (0-600) and model_year (1990-2025)
 - Computes moving averages and aggregations:
   - 5-minute window, sliding every 1 minute
@@ -73,7 +73,7 @@ bdt/
 ### `EVStreamTransformations.java`
 
 - **Location processing** (single-pass):
-  - `getValidLocationData()` — Reads location topic, parses JSON, filters for non-null county and vehicle_location
+  - `getValidLocationData()` — Reads location topic, parses JSON, filters for non-null dol_vehicle_id
 - **Evdata processing** (single-pass):
   - `getValidEvdataData()` — Reads evdata topic, parses JSON, filters for valid electric_range (0-600) and model_year (1990-2025)
 - **Aggregation**:
@@ -100,10 +100,10 @@ bdt/
 
 1. Two Kafka topics (`electric-vehicle-location` and `electric-vehicle-evdata`) provide JSON records.
 2. Spark reads each topic independently using the Kafka message key (dol_vehicle_id) for correlation.
-3. Location stream is parsed and **filtered for valid records** (non-null county, vehicle_location) — invalid records are dropped.
+3. Location stream is parsed and **filtered for valid records** (non-null dol_vehicle_id) — invalid records are dropped.
 4. Evdata stream is parsed and **filtered for valid records** (valid electric_range and model_year) — invalid records are dropped.
 5. Valid location and evdata records are joined on dol_vehicle_id.
-6. Joined stream is windowed (5-min tumbling, 1-min slide) and aggregated by county + make.
+6. Joined stream and aggregated by county + make.
 7. All three streams (location, evdata, moving_averages) write independently to Hive in parallel.
 8. Each stream maintains its own checkpoint for restart safety and offset tracking.
 
@@ -213,52 +213,3 @@ In app logs, look for:
 - `Wrote evdata batch ... to ev_db.ev_data`
 - `Wrote Evaggregation batch ... to ev_db.ev_aggregation`
 
-## Verify Spark → Hive connection
-
-Before running the app, verify that Spark can reach Hive:
-
-1. Check that metastore is running:
-
-```powershell
-docker exec cs523bdt-lab ps aux | Select-String metastore
-```
-
-Expected output should show a running `hive --service metastore` process.
-
-2. Test connection with Hive CLI (from inside container):
-
-```powershell
-docker exec -it cs523bdt-lab hive -e "SHOW DATABASES;"
-```
-
-3. Verify warehouse directory exists:
-
-```powershell
-docker exec cs523bdt-lab hdfs dfs -ls /user/hive/warehouse
-```
-
-If warehouse doesn't exist, create it:
-
-```powershell
-docker exec cs523bdt-lab hdfs dfs -mkdir -p /user/hive/warehouse
-docker exec cs523bdt-lab hdfs dfs -chmod 777 /user/hive/warehouse
-```
-
-## Verify Hive output
-
-After running the Spark app, use Hive CLI to query tables:
-
-```powershell
-docker exec -it cs523bdt-lab hive
-```
-
-Then in Hive CLI:
-
-```sql
-SHOW DATABASES;
-USE ev_db;
-SHOW TABLES;
-SELECT * FROM ev_location_data ORDER BY event_time DESC LIMIT 20;
-SELECT * FROM ev_data ORDER BY event_time DESC LIMIT 20;
-SELECT * FROM ev_aggregation ORDER BY county LIMIT 20;
-```
